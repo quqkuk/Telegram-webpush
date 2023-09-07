@@ -13,6 +13,9 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.firebase.messaging.FirebaseMessaging;
 
+import org.unifiedpush.android.connector.UnifiedPush;
+import org.unifiedpush.android.connector.RegistrationDialogContent;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.tgnet.ConnectionsManager;
@@ -28,12 +31,14 @@ import java.util.concurrent.CountDownLatch;
 
 public class PushListenerController {
     public static final int PUSH_TYPE_FIREBASE = 2,
-        PUSH_TYPE_HUAWEI = 13;
+            PUSH_TYPE_HUAWEI = 13,
+            PUSH_TYPE_WEBPUSH = 10;
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({
             PUSH_TYPE_FIREBASE,
-            PUSH_TYPE_HUAWEI
+            PUSH_TYPE_HUAWEI,
+            PUSH_TYPE_WEBPUSH
     })
     public @interface PushType {}
 
@@ -1473,6 +1478,55 @@ public class PushListenerController {
                 }
             }
             return hasServices;
+        }
+    }
+
+    public final static class UnifiedPushListenerServiceProvider implements IPushListenerServiceProvider {
+        public final static UnifiedPushListenerServiceProvider INSTANCE = new UnifiedPushListenerServiceProvider();
+
+        private UnifiedPushListenerServiceProvider(){};
+
+        @Override
+        public boolean hasServices() {
+            return !UnifiedPush.getDistributors(ApplicationLoader.applicationContext, new ArrayList()).isEmpty();
+        }
+
+        @Override
+        public String getLogTitle() {
+            return "UnifiedPush";
+        }
+
+        @Override
+        public void onRequestPushToken() {
+            String currentPushString = SharedConfig.pushString;
+            if (!TextUtils.isEmpty(currentPushString)) {
+                if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
+                    FileLog.d("UnifiedPush regId = " + currentPushString);
+                }
+            } else {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("No UnifiedPush string found");
+                }
+            }
+            Utilities.globalQueue.postRunnable(() -> {
+                try {
+                    SharedConfig.pushStringGetTimeStart = SystemClock.elapsedRealtime();
+                    UnifiedPush.registerAppWithDialog(
+                            ApplicationLoader.applicationContext,
+                            "default",
+                            new RegistrationDialogContent(),
+                            new ArrayList<>(),
+                            "Telegram WebPush"
+                    );
+                } catch (Throwable e) {
+                    FileLog.e(e);
+                }
+            });
+        }
+
+        @Override
+        public int getPushType() {
+            return PUSH_TYPE_WEBPUSH;
         }
     }
 }

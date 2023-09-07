@@ -5,6 +5,7 @@ apply plugin: 'com.android.library'
 repositories {
     mavenCentral()
     google()
+    maven { url 'https://www.jitpack.io' }
 }
 
 configurations {
@@ -45,6 +46,8 @@ dependencies {
     implementation 'com.android.billingclient:billing:5.1.0'
     implementation 'com.google.code.gson:gson:2.10'
     implementation 'com.google.guava:guava:31.1-android'
+
+    implementation 'com.github.UnifiedPush:android-connector:2.1.1'
 
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:1.1.5'
 }
