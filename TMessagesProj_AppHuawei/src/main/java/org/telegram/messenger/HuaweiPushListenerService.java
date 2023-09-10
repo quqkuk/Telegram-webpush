@@ -17,7 +17,7 @@ public class HuaweiPushListenerService extends HmsMessageService {
                 FileLog.d("HCM received data: " + data + " from: " + from);
             }
 
-            PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_HUAWEI, data, time);
+            PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_HUAWEI, data.getBytes(), time);
         });
     }
 

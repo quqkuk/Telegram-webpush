@@ -1,7 +1,7 @@
 package org.telegram.messenger;
 
 import android.content.Context;
-import android.util.Log;
+import android.os.SystemClock;
 
 import org.unifiedpush.android.connector.MessagingReceiver;
 
@@ -16,7 +16,7 @@ public class UnifiedPushReceiver extends MessagingReceiver {
 
     @Override
     public void onMessage(Context context, byte[] message, String instance){
-        //PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_WEBPUSH, message, time);
+        PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_WEBPUSH, message, SystemClock.elapsedRealtime());
     }
 
     @Override

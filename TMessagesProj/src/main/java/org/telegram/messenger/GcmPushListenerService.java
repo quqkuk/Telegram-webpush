@@ -27,7 +27,7 @@ public class GcmPushListenerService extends FirebaseMessagingService {
             FileLog.d("FCM received data: " + data + " from: " + from);
         }
 
-        PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_FIREBASE, data.get("p"), time);
+        PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_FIREBASE, data.get("p").getBytes(), time);
     }
 
     @Override
