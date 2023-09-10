@@ -215,6 +215,8 @@ public class SharedConfig {
     public static long pushStringGetTimeEnd;
     public static boolean pushStatSent;
     public static byte[] pushAuthKey;
+    public static byte[] pushAuthPubKey;
+    public static byte[] pushAuthSecret;
     public static byte[] pushAuthKeyId;
 
     public static String directShareHash;
@@ -438,6 +440,8 @@ public class SharedConfig {
                 editor.putInt("pushType", pushType);
                 editor.putBoolean("pushStatSent", pushStatSent);
                 editor.putString("pushAuthKey", pushAuthKey != null ? Base64.encodeToString(pushAuthKey, Base64.DEFAULT) : "");
+                editor.putString("pushAuthPubKey", pushAuthPubKey != null ? Base64.encodeToString(pushAuthKey, Base64.DEFAULT) : "");
+                editor.putString("pushAuthSecret", pushAuthSecret != null ? Base64.encodeToString(pushAuthSecret, Base64.DEFAULT) : "");
                 editor.putInt("lastLocalId", lastLocalId);
                 editor.putString("passportConfigJson", passportConfigJson);
                 editor.putInt("passportConfigHash", passportConfigHash);
@@ -525,6 +529,14 @@ public class SharedConfig {
             String authKeyString = preferences.getString("pushAuthKey", null);
             if (!TextUtils.isEmpty(authKeyString)) {
                 pushAuthKey = Base64.decode(authKeyString, Base64.DEFAULT);
+            }
+            String authPubKeyString = preferences.getString("pushAuthKey", null);
+            if (!TextUtils.isEmpty(authPubKeyString)) {
+                pushAuthPubKey = Base64.decode(authPubKeyString, Base64.DEFAULT);
+            }
+            String authSecretString = preferences.getString("pushAuthSecret", null);
+            if (!TextUtils.isEmpty(authSecretString)) {
+                pushAuthSecret = Base64.decode(authSecretString, Base64.DEFAULT);
             }
 
             if (passcodeHash.length() > 0 && lastPauseTime == 0) {

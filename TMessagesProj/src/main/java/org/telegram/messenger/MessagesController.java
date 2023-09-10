@@ -12990,16 +12990,8 @@ public class MessagesController extends BaseController implements NotificationCe
         }
         registeringForPush = true;
         lastPushRegisterSendTime = SystemClock.elapsedRealtime();
-        if (SharedConfig.pushAuthKey == null) {
-            SharedConfig.pushAuthKey = new byte[256];
-            Utilities.random.nextBytes(SharedConfig.pushAuthKey);
-            SharedConfig.saveConfig();
-        }
         TLRPC.TL_account_registerDevice req = new TLRPC.TL_account_registerDevice();
-        req.token_type = pushType;
-        req.token = regid;
         req.no_muted = false;
-        req.secret = SharedConfig.pushAuthKey;
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
             UserConfig userConfig = UserConfig.getInstance(a);
             if (a != currentAccount && userConfig.isClientActivated()) {
@@ -13009,6 +13001,12 @@ public class MessagesController extends BaseController implements NotificationCe
                     FileLog.d("add other uid = " + uid + " for account " + currentAccount);
                 }
             }
+        }
+        boolean success = PushListenerController.pushTypeProvider.get(pushType)
+                .buildRegisterRequest(req, regid, this);
+        if(!success){
+            AndroidUtilities.runOnUIThread(() -> registeringForPush = false);
+            return;
         }
         getConnectionsManager().sendRequest(req, (response, error) -> {
             if (response instanceof TLRPC.TL_boolTrue) {

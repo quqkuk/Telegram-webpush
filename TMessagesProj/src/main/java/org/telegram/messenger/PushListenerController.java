@@ -13,6 +13,7 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.firebase.messaging.FirebaseMessaging;
 
+import org.json.JSONStringer;
 import org.unifiedpush.android.connector.UnifiedPush;
 import org.unifiedpush.android.connector.RegistrationDialogContent;
 
@@ -24,9 +25,17 @@ import org.telegram.tgnet.TLRPC;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.math.BigInteger;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.spec.ECGenParameterSpec;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECFieldFp;
+import java.security.spec.ECPoint;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 public class PushListenerController {
@@ -41,6 +50,11 @@ public class PushListenerController {
             PUSH_TYPE_WEBPUSH
     })
     public @interface PushType {}
+
+    public static final Map<Integer, IPushListenerServiceProvider> pushTypeProvider = Map.of(
+            PUSH_TYPE_FIREBASE, GooglePushListenerServiceProvider.INSTANCE,
+            PUSH_TYPE_WEBPUSH, UnifiedPushListenerServiceProvider.INSTANCE
+    );
 
     public static final int NOTIFICATION_ID = 1;
     private static CountDownLatch countDownLatch = new CountDownLatch(1);
@@ -65,7 +79,14 @@ public class PushListenerController {
                 if (userConfig.getClientUserId() != 0) {
                     final int currentAccount = a;
                     if (sendStat) {
-                        String tag = pushType == PUSH_TYPE_FIREBASE ? "fcm" : "hcm";
+                        String tag;
+                        if(pushType == PUSH_TYPE_FIREBASE) {
+                            tag = "fcm";
+                        } else if(pushType == PUSH_TYPE_HUAWEI){
+                            tag = "hcm";
+                        } else {
+                            tag = "up";
+                        }
                         TLRPC.TL_help_saveAppLog req = new TLRPC.TL_help_saveAppLog();
                         TLRPC.TL_inputAppEvent event = new TLRPC.TL_inputAppEvent();
                         event.time = SharedConfig.pushStringGetTimeStart;
@@ -1410,6 +1431,8 @@ public class PushListenerController {
         void onRequestPushToken();
         @PushType
         int getPushType();
+
+        boolean buildRegisterRequest(TLRPC.TL_account_registerDevice request, String id, MessagesController msgController);
     }
 
     public final static class GooglePushListenerServiceProvider implements IPushListenerServiceProvider {
@@ -1427,6 +1450,19 @@ public class PushListenerController {
         @Override
         public int getPushType() {
             return PUSH_TYPE_FIREBASE;
+        }
+
+        @Override
+        public boolean buildRegisterRequest(TLRPC.TL_account_registerDevice req, String regid, MessagesController msgController) {
+            if (SharedConfig.pushAuthKey == null) {
+                SharedConfig.pushAuthKey = new byte[256];
+                Utilities.random.nextBytes(SharedConfig.pushAuthKey);
+                SharedConfig.saveConfig();
+            }
+            req.token_type = getPushType();
+            req.token = regid;
+            req.secret = SharedConfig.pushAuthKey;
+            return true;
         }
 
         @Override
@@ -1501,7 +1537,7 @@ public class PushListenerController {
             String currentPushString = SharedConfig.pushString;
             if (!TextUtils.isEmpty(currentPushString)) {
                 if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
-                    FileLog.d("UnifiedPush regId = " + currentPushString);
+                    FileLog.d("UnifiedPush endpoint = " + currentPushString);
                 }
             } else {
                 if (BuildVars.LOGS_ENABLED) {
@@ -1522,6 +1558,63 @@ public class PushListenerController {
                     FileLog.e(e);
                 }
             });
+        }
+
+        private byte[] convertECPubkeyToOctetStream(ECPublicKey pubkey) {
+            final BigInteger curveModulus = ((ECFieldFp) pubkey.getParams().getCurve().getField()).getP();
+            // floor((ceil(log(q-1))+7)/8) = ceil(log(q-1)/8)
+            final int coordinateSize = (curveModulus.subtract(BigInteger.ONE).bitLength()+7)/8;
+            final byte[] stream = new byte[2*coordinateSize+1];
+            final ECPoint pubkeyCurvePoint = pubkey.getW();
+            final byte[] pointX = pubkeyCurvePoint.getAffineX().toByteArray();
+            final byte[] pointY = pubkeyCurvePoint.getAffineY().toByteArray();
+            System.arraycopy(pointX, 0, stream, 1+coordinateSize-pointX.length, pointX.length);
+            System.arraycopy(pointY, 0, stream, 1+2*coordinateSize-pointY.length, pointY.length);
+            stream[0] = 4;
+            return stream;
+        }
+
+        @Override
+        public boolean buildRegisterRequest(TLRPC.TL_account_registerDevice request, String endpoint, MessagesController msgController) {
+            // Generate ECDH Keypair on P-256 curve
+            KeyPairGenerator ecdhKeyPairGenerator;
+            try {
+                ecdhKeyPairGenerator = KeyPairGenerator.getInstance("EC");
+                ecdhKeyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
+            } catch (Throwable exception) {
+                FileLog.e(exception);
+                return false;
+            }
+            KeyPair ecdhKeyPair = ecdhKeyPairGenerator.generateKeyPair();
+            SharedConfig.pushAuthKey = ecdhKeyPair.getPrivate().getEncoded();
+            SharedConfig.pushAuthPubKey = ecdhKeyPair.getPublic().getEncoded();
+
+            // Generate auth secret
+            SharedConfig.pushAuthSecret = new byte[16];
+            Utilities.random.nextBytes(SharedConfig.pushAuthSecret);
+            SharedConfig.saveConfig();
+
+            String jsonToken;
+            try {
+                jsonToken = new JSONStringer()
+                        .object()
+                        .key("endpoint").value(endpoint)
+                        .key("keys")
+                        .object()
+                        .key("p256dh").value(Base64.encodeToString(convertECPubkeyToOctetStream((ECPublicKey) ecdhKeyPair.getPublic()), Base64.URL_SAFE | Base64.NO_WRAP))
+                        .key("auth").value(Base64.encodeToString(SharedConfig.pushAuthSecret, Base64.URL_SAFE | Base64.NO_WRAP))
+                        .endObject()
+                        .endObject()
+                        .toString();
+            } catch (Throwable exception) {
+                FileLog.e(exception);
+                return false;
+            }
+
+            request.token_type = getPushType();
+            request.token = jsonToken;
+            request.secret = new byte[0];
+            return true;
         }
 
         @Override
