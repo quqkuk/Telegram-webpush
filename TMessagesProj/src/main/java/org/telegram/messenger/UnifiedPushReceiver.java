@@ -2,14 +2,17 @@ package org.telegram.messenger;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.util.Log;
 
 import org.unifiedpush.android.connector.MessagingReceiver;
 
 public class UnifiedPushReceiver extends MessagingReceiver {
     @Override
     public void onNewEndpoint(Context context, String endpoint, String instance){
+        final long getPushStringEndTime = SystemClock.elapsedRealtime();
         AndroidUtilities.runOnUIThread(() -> {
             ApplicationLoader.postInitApplication();
+            SharedConfig.pushStringGetTimeEnd = getPushStringEndTime;
             PushListenerController.sendRegistrationToServer(PushListenerController.PUSH_TYPE_WEBPUSH, endpoint);
         });
     }
@@ -21,7 +24,7 @@ public class UnifiedPushReceiver extends MessagingReceiver {
 
     @Override
     public void onRegistrationFailed(Context context, String instance){
-
+        //TODO: Handle Failure
     }
 
     public void onUnregistered(Context context, String instance){
