@@ -26,17 +26,35 @@ import org.telegram.tgnet.TLRPC;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.ECPrivateKey;
 import java.security.spec.ECGenParameterSpec;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECFieldFp;
+import java.security.spec.ECParameterSpec;
 import java.security.spec.ECPoint;
+import java.security.spec.ECPublicKeySpec;
+import java.security.spec.EllipticCurve;
+import java.security.spec.EncodedKeySpec;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+
+import javax.crypto.KeyAgreement;
+import javax.crypto.Mac;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 public class PushListenerController {
     public static final int PUSH_TYPE_FIREBASE = 2,
@@ -142,6 +160,7 @@ public class PushListenerController {
                 String loc_key = null;
                 String jsonString = null;
                 try {
+                    Log.d("PushListenerController", "Sending " + pushTypeProvider.get(pushType).getClass().getName() + " message " + data.toString());
                     jsonString = pushTypeProvider.get(pushType).getPayloadFromRemoteMessage(tag, data);
                     JSONObject json = new JSONObject(jsonString);
 
@@ -150,8 +169,6 @@ public class PushListenerController {
                     } else {
                         loc_key = "";
                     }
-
-
 
                     JSONObject custom;
                     Object object = json.get("custom");
@@ -1560,6 +1577,7 @@ public class PushListenerController {
             Utilities.globalQueue.postRunnable(() -> {
                 try {
                     SharedConfig.pushStringGetTimeStart = SystemClock.elapsedRealtime();
+                    SharedConfig.saveConfig();
                     UnifiedPush.registerAppWithDialog(
                             ApplicationLoader.applicationContext,
                             "default",
@@ -1573,18 +1591,45 @@ public class PushListenerController {
             });
         }
 
-        private byte[] convertECPubkeyToOctetStream(ECPublicKey pubkey) {
-            final BigInteger curveModulus = ((ECFieldFp) pubkey.getParams().getCurve().getField()).getP();
-            // floor((ceil(log(q-1))+7)/8) = ceil(log(q-1)/8)
-            final int coordinateSize = (curveModulus.subtract(BigInteger.ONE).bitLength()+7)/8;
-            final byte[] stream = new byte[2*coordinateSize+1];
+        static final private ECParameterSpec P256CurveSpec = new ECParameterSpec(
+                new EllipticCurve(
+                        new ECFieldFp(new BigInteger("115792089210356248762697446949407573530086143415290314195533631308867097853951")),
+                        new BigInteger("115792089210356248762697446949407573530086143415290314195533631308867097853948"),
+                        new BigInteger("41058363725152142129326129780047268409114441015993725554835256314039467401291")
+                ),
+                new ECPoint(
+                        new BigInteger("48439561293906451759052585252797914202762949526041747995844080717082404635286"),
+                        new BigInteger("36134250956749795798585127919587881956611106672985015071877198253568414405109")
+                ),
+                new BigInteger("115792089210356248762697446949407573529996955224135760342422259061068512044369"),
+                0x1
+        );
+        // floor((ceil(log(q-1))+7)/8) = ceil(log(q-1)/8)
+        static final private int ECCoordinateSize = (((ECFieldFp) P256CurveSpec.getCurve().getField()).getP()
+                .subtract(BigInteger.ONE).bitLength()+7)/8;
+
+        private static byte[] convertECPubkeyToUncompressedOctetStream(ECPublicKey pubkey) {
+            final byte[] stream = new byte[2*ECCoordinateSize+1];
             final ECPoint pubkeyCurvePoint = pubkey.getW();
             final byte[] pointX = pubkeyCurvePoint.getAffineX().toByteArray();
             final byte[] pointY = pubkeyCurvePoint.getAffineY().toByteArray();
-            System.arraycopy(pointX, 0, stream, 1+coordinateSize-pointX.length, pointX.length);
-            System.arraycopy(pointY, 0, stream, 1+2*coordinateSize-pointY.length, pointY.length);
-            stream[0] = 4;
+            System.arraycopy(pointX, 0, stream, 1+ECCoordinateSize-pointX.length, pointX.length);
+            System.arraycopy(pointY, 0, stream, 1+2*ECCoordinateSize-pointY.length, pointY.length);
+            stream[0] = 0x04;
             return stream;
+        }
+
+        private static ECPublicKey convertUncompressedOctetStreamToECPubkey(byte[] payload) throws NoSuchAlgorithmException, InvalidKeySpecException {
+            final byte[] pointCoordinateBuffer = new byte[ECCoordinateSize];
+            System.arraycopy(payload, 1, pointCoordinateBuffer, 0, pointCoordinateBuffer.length);
+            final BigInteger pointX = new BigInteger(pointCoordinateBuffer);
+            System.arraycopy(payload, 1+ECCoordinateSize, pointCoordinateBuffer, 0, pointCoordinateBuffer.length);
+            final BigInteger pointY = new BigInteger(pointCoordinateBuffer);
+
+            final KeyFactory keyFactory = KeyFactory.getInstance("EC");
+            return (ECPublicKey) keyFactory.generatePublic(
+                    new ECPublicKeySpec(new ECPoint(pointX, pointY), P256CurveSpec)
+            );
         }
 
         @Override
@@ -1614,7 +1659,7 @@ public class PushListenerController {
                         .key("endpoint").value(endpoint)
                         .key("keys")
                         .object()
-                        .key("p256dh").value(Base64.encodeToString(convertECPubkeyToOctetStream((ECPublicKey) ecdhKeyPair.getPublic()), Base64.URL_SAFE | Base64.NO_WRAP))
+                        .key("p256dh").value(Base64.encodeToString(convertECPubkeyToUncompressedOctetStream((ECPublicKey) ecdhKeyPair.getPublic()), Base64.URL_SAFE | Base64.NO_WRAP))
                         .key("auth").value(Base64.encodeToString(SharedConfig.pushAuthSecret, Base64.URL_SAFE | Base64.NO_WRAP))
                         .endObject()
                         .endObject()
@@ -1630,8 +1675,107 @@ public class PushListenerController {
             return true;
         }
 
+        private static Mac getHKDF32Mac(byte[] salt, byte[] ikm) throws NoSuchAlgorithmException, InvalidKeyException {
+            final Mac hmac = Mac.getInstance("HmacSHA256");
+            hmac.init(new SecretKeySpec(salt, "HmacSHA256"));
+            final byte[] pseudoRandomKey = hmac.doFinal(ikm);
+            hmac.init(new SecretKeySpec(pseudoRandomKey, "HmacSHA256"));
+            return hmac;
+        }
+
         @Override
         public String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable {
+            /*String data = new String(dataBytes);
+            byte[] bytes = Base64.decode(data, Base64.URL_SAFE);
+            NativeByteBuffer buffer = new NativeByteBuffer(bytes.length);
+            buffer.writeBytes(bytes);
+            buffer.position(0);
+
+            if (SharedConfig.pushAuthKeyId == null) {
+                SharedConfig.pushAuthKeyId = new byte[8];
+                byte[] authKeyHash = Utilities.computeSHA1(SharedConfig.pushAuthKey);
+                System.arraycopy(authKeyHash, authKeyHash.length - 8, SharedConfig.pushAuthKeyId, 0, 8);
+            }
+            byte[] inAuthKeyId = new byte[8];
+            buffer.readBytes(inAuthKeyId, true);
+            if (!Arrays.equals(SharedConfig.pushAuthKeyId, inAuthKeyId)) {
+                onDecryptError();
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d(String.format(Locale.US, tag + " DECRYPT ERROR 2 k1=%s k2=%s, key=%s", Utilities.bytesToHex(SharedConfig.pushAuthKeyId), Utilities.bytesToHex(inAuthKeyId), Utilities.bytesToHex(SharedConfig.pushAuthKey)));
+                }
+                return null;
+            }
+
+            byte[] messageKey = new byte[16];
+            buffer.readBytes(messageKey, true);
+
+            MessageKeyData messageKeyData = MessageKeyData.generateMessageKeyData(SharedConfig.pushAuthKey, messageKey, true, 2);
+            Utilities.aesIgeEncryption(buffer.buffer, messageKeyData.aesKey, messageKeyData.aesIv, false, false, 24, bytes.length - 24);
+
+            byte[] messageKeyFull = Utilities.computeSHA256(SharedConfig.pushAuthKey, 88 + 8, 32, buffer.buffer, 24, buffer.buffer.limit());
+            if (!Utilities.arraysEquals(messageKey, 0, messageKeyFull, 8)) {
+                onDecryptError();
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d(String.format(tag + " DECRYPT ERROR 3, key = %s", Utilities.bytesToHex(SharedConfig.pushAuthKey)));
+                }
+                return null;
+            }
+
+            int len = buffer.readInt32(true);
+            byte[] strBytes = new byte[len];
+            buffer.readBytes(strBytes, true);
+            return new String(strBytes);*/
+            Log.d("UnifiedPush", "Received notification " + data.toString());
+            final ByteBuffer encryptedPayload = ByteBuffer.wrap(data);
+            final byte[] salt = new byte[16];
+            encryptedPayload.get(salt);
+            final long recordSize = ((long) encryptedPayload.getInt()) & 0xFFFFFFFF;
+            final ECPublicKey serverPubKey;
+            //TODO: payload contains only one record - check size
+            {
+                final short pubkeySize = (short) (((short) encryptedPayload.get()) & 0xFF);
+                //TODO: check size
+                final byte[] pubkeyBytes = new byte[pubkeySize];
+                encryptedPayload.get(pubkeyBytes);
+                Log.d("UnifiedPush", "Received pubkey starts with " + pubkeyBytes[0]);
+                if(pubkeyBytes[0] != 0x04){
+                    //TODO: Improve Exceptions
+                    throw new Exception("Public Key is not uncompressed");
+                }
+                serverPubKey = convertUncompressedOctetStreamToECPubkey(pubkeyBytes);
+            }
+            final ECPrivateKey privKey;
+            final ECPublicKey clientPubKey;
+            {
+                final KeyFactory ECKeyFactory = KeyFactory.getInstance("EC");
+                privKey = (ECPrivateKey) ECKeyFactory.generatePrivate(new PKCS8EncodedKeySpec(SharedConfig.pushAuthKey));
+                clientPubKey = (ECPublicKey) ECKeyFactory.generatePublic(new X509EncodedKeySpec(SharedConfig.pushAuthPubKey));
+            }
+            final KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
+            keyAgreement.init(privKey);
+            keyAgreement.doPhase(serverPubKey, true);
+            final byte[] sharedSecret = keyAgreement.generateSecret();
+            final byte[] contentEncryptionKey;
+            final byte[] nonce;
+            {
+                Mac HKDFFunction = getHKDF32Mac(SharedConfig.pushAuthSecret, sharedSecret);
+                HKDFFunction.update("WebPush: info".getBytes(StandardCharsets.US_ASCII));
+                HKDFFunction.update((byte) 0x00);
+                HKDFFunction.update(convertECPubkeyToUncompressedOctetStream(clientPubKey));
+                HKDFFunction.update(convertECPubkeyToUncompressedOctetStream(serverPubKey));
+                HKDFFunction.update((byte) 0x01);
+                final byte[] masterKey = HKDFFunction.doFinal();
+                HKDFFunction = getHKDF32Mac(salt, masterKey);
+                HKDFFunction.update("Content-Encoding: aes128gcm".getBytes(StandardCharsets.US_ASCII));
+                HKDFFunction.update((byte) 0x00);
+                HKDFFunction.update((byte) 0x01);
+                contentEncryptionKey = HKDFFunction.doFinal();
+                HKDFFunction.update("Content-Encoding: nonce".getBytes(StandardCharsets.US_ASCII));
+                HKDFFunction.update((byte) 0x00);
+                HKDFFunction.update((byte) 0x01);
+                nonce = new byte[12];
+                System.arraycopy(HKDFFunction.doFinal(), 0, nonce, 0, 12);
+            }
             throw new Exception("Not Implemented");
         }
 
