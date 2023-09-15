@@ -28,6 +28,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -51,9 +52,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyAgreement;
 import javax.crypto.Mac;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import javax.crypto.ShortBufferException;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public class PushListenerController {
@@ -1680,6 +1687,28 @@ public class PushListenerController {
             return hmac;
         }
 
+        private static byte[] aead_aes_128_gcm_decrypt(byte[] key, byte[] nonce, byte[] ciphertext, int offset) throws NoSuchAlgorithmException, NoSuchPaddingException,
+                InvalidAlgorithmParameterException, InvalidKeyException,
+                BadPaddingException, IllegalBlockSizeException, ShortBufferException {
+            final Cipher AESCipher = Cipher.getInstance("AES_128/GCM/NoPadding");
+            AESCipher.init(
+                    Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(key, "AES"),
+                    new GCMParameterSpec(16*8, nonce)
+            );
+            final byte[] plaintext = AESCipher.doFinal(ciphertext, offset, ciphertext.length-offset);
+            int dataLength = plaintext.length-1;
+            while(plaintext[dataLength] == 0x00){
+                dataLength -= 1;
+            }
+            if(plaintext[dataLength] != 0x02){
+                //TODO: Throw error
+            }
+            final byte[] data = new byte[dataLength];
+            System.arraycopy(plaintext, 0, data, 0, dataLength);
+            return data;
+        }
+
         @Override
         public String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable {
             /*String data = new String(dataBytes);
@@ -1773,7 +1802,10 @@ public class PushListenerController {
                 nonce = new byte[12];
                 System.arraycopy(HKDFFunction.doFinal(), 0, nonce, 0, 12);
             }
-            throw new Exception("Not Implemented");
+            //TODO: Check that record size is the same as the remaining bytes, as there must be only
+            // one record
+            final byte[] plaintext = aead_aes_128_gcm_decrypt(contentEncryptionKey, nonce, data, encryptedPayload.arrayOffset());
+            return new String(plaintext, StandardCharsets.UTF_8);
         }
 
         @Override
