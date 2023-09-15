@@ -335,7 +335,7 @@ public class ApplicationLoader extends Application {
                     FileLog.d("No valid " + getPushProvider().getLogTitle() + " APK found.");
                 }
                 SharedConfig.pushStringStatus = "__NO_GOOGLE_PLAY_SERVICES__";
-                PushListenerController.sendRegistrationToServer(getPushProvider().getPushType(), null);
+                PushListenerController.sendRegistrationToServer(getPushProvider(), null);
             }
         }, 1000);
     }
