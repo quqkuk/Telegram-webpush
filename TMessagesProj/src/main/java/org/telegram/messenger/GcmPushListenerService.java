@@ -27,7 +27,7 @@ public class GcmPushListenerService extends FirebaseMessagingService {
             FileLog.d("FCM received data: " + data + " from: " + from);
         }
 
-        PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_FIREBASE, data.get("p").getBytes(), time);
+        PushListenerController.processRemoteMessage(PushListenerController.GooglePushListenerServiceProvider.INSTANCE, data.get("p").getBytes(), time);
     }
 
     @Override
@@ -37,7 +37,7 @@ public class GcmPushListenerService extends FirebaseMessagingService {
                 FileLog.d("Refreshed FCM token: " + token);
             }
             ApplicationLoader.postInitApplication();
-            PushListenerController.sendRegistrationToServer(PushListenerController.PUSH_TYPE_FIREBASE, token);
+            PushListenerController.sendRegistrationToServer(PushListenerController.GooglePushListenerServiceProvider.INSTANCE, token);
         });
     }
 }

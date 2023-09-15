@@ -14,14 +14,14 @@ public class UnifiedPushReceiver extends MessagingReceiver {
             ApplicationLoader.postInitApplication();
             Utilities.globalQueue.postRunnable(() -> {
                 SharedConfig.pushStringGetTimeEnd = getPushStringEndTime;
-                PushListenerController.sendRegistrationToServer(PushListenerController.PUSH_TYPE_WEBPUSH, endpoint);
+                PushListenerController.sendRegistrationToServer(PushListenerController.UnifiedPushListenerServiceProvider.INSTANCE, endpoint);
             });
         });
     }
 
     @Override
     public void onMessage(Context context, byte[] message, String instance){
-        PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_WEBPUSH, message, SystemClock.elapsedRealtime());
+        PushListenerController.processRemoteMessage(PushListenerController.UnifiedPushListenerServiceProvider.INSTANCE, message, SystemClock.elapsedRealtime());
     }
 
     @Override

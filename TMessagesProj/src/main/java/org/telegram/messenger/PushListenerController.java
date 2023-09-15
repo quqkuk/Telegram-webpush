@@ -69,15 +69,11 @@ public class PushListenerController {
     })
     public @interface PushType {}
 
-    public static final Map<Integer, IPushListenerServiceProvider> pushTypeProvider = Map.of(
-            PUSH_TYPE_FIREBASE, GooglePushListenerServiceProvider.INSTANCE,
-            PUSH_TYPE_WEBPUSH, UnifiedPushListenerServiceProvider.INSTANCE
-    );
-
     public static final int NOTIFICATION_ID = 1;
     private static CountDownLatch countDownLatch = new CountDownLatch(1);
 
-    public static void sendRegistrationToServer(@PushType int pushType, String token) {
+    public static void sendRegistrationToServer(IPushListenerServiceProvider pushProvider, String token) {
+        @PushType int pushType = pushProvider.getPushType();
         Utilities.stageQueue.postRunnable(() -> {
             ConnectionsManager.setRegId(token, pushType, SharedConfig.pushStringStatus);
             if (token == null) {
@@ -125,13 +121,14 @@ public class PushListenerController {
                         SharedConfig.saveConfig();
                         ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
                     }
-                    AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(currentAccount).registerForPush(pushType, token));
+                    AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(currentAccount).registerForPush(pushProvider, token));
                 }
             }
         });
     }
 
-    public static void processRemoteMessage(@PushType int pushType, byte[] data, long time) {
+    public static void processRemoteMessage(IPushListenerServiceProvider pushProvider, byte[] data, long time) {
+        @PushType int pushType = pushProvider.getPushType();
         String tag;
         if(pushType == PUSH_TYPE_FIREBASE){
             tag = "FCM";
@@ -160,8 +157,8 @@ public class PushListenerController {
                 String loc_key = null;
                 String jsonString = null;
                 try {
-                    Log.d("PushListenerController", "Sending " + pushTypeProvider.get(pushType).getClass().getName() + " message " + data.toString());
-                    jsonString = pushTypeProvider.get(pushType).getPayloadFromRemoteMessage(tag, data);
+                    Log.d("PushListenerController", "Sending " + pushProvider.getClass().getName() + " message " + data.toString());
+                    jsonString = pushProvider.getPayloadFromRemoteMessage(tag, data);
                     JSONObject json = new JSONObject(jsonString);
 
                     if (json.has("loc_key")) {
@@ -1518,12 +1515,12 @@ public class PushListenerController {
                                         FileLog.d("Failed to get regid");
                                     }
                                     SharedConfig.pushStringStatus = "__FIREBASE_FAILED__";
-                                    PushListenerController.sendRegistrationToServer(getPushType(), null);
+                                    PushListenerController.sendRegistrationToServer(this, null);
                                     return;
                                 }
                                 String token = task.getResult();
                                 if (!TextUtils.isEmpty(token)) {
-                                    PushListenerController.sendRegistrationToServer(getPushType(), token);
+                                    PushListenerController.sendRegistrationToServer(this, token);
                                 }
                             });
                 } catch (Throwable e) {

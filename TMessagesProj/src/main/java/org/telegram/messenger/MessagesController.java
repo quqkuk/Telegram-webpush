@@ -8380,7 +8380,7 @@ public class MessagesController extends BaseController implements NotificationCe
             lastPasswordCheckTime = currentTime;
         }
         if (lastPushRegisterSendTime != 0 && Math.abs(SystemClock.elapsedRealtime() - lastPushRegisterSendTime) >= 3 * 60 * 60 * 1000) {
-            PushListenerController.sendRegistrationToServer(SharedConfig.pushType, SharedConfig.pushString);
+            PushListenerController.sendRegistrationToServer(ApplicationLoader.getPushProvider(), SharedConfig.pushString);
         }
         getLocationController().update();
         checkPromoInfoInternal(false);
@@ -12981,7 +12981,7 @@ public class MessagesController extends BaseController implements NotificationCe
         });
     }
 
-    public void registerForPush(@PushListenerController.PushType int pushType, String regid) {
+    public void registerForPush(PushListenerController.IPushListenerServiceProvider pushProvider, String regid) {
         if (TextUtils.isEmpty(regid) || registeringForPush || getUserConfig().getClientUserId() == 0) {
             return;
         }
@@ -13002,14 +13002,14 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
         }
-        boolean success = PushListenerController.pushTypeProvider.get(pushType)
-                .buildRegisterRequest(req, regid, this);
+        boolean success = pushProvider.buildRegisterRequest(req, regid, this);
         if(!success){
             AndroidUtilities.runOnUIThread(() -> registeringForPush = false);
             return;
         }
         getConnectionsManager().sendRequest(req, (response, error) -> {
             if (response instanceof TLRPC.TL_boolTrue) {
+                @PushListenerController.PushType int pushType = pushProvider.getPushType();
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("account " + currentAccount + " registered for push, push type: " + pushType);
                 }
@@ -13654,7 +13654,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void getDifference(int pts, int date, int qts, boolean slice) {
-        registerForPush(SharedConfig.pushType, SharedConfig.pushString);
+        registerForPush(ApplicationLoader.getPushProvider(), SharedConfig.pushString);
         if (getMessagesStorage().getLastPtsValue() == 0) {
             loadCurrentState();
             return;
