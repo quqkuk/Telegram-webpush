@@ -42,14 +42,12 @@ import java.security.spec.ECParameterSpec;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.EllipticCurve;
-import java.security.spec.EncodedKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 import javax.crypto.BadPaddingException;
@@ -58,7 +56,6 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyAgreement;
 import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
 import javax.crypto.ShortBufferException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -1547,6 +1544,8 @@ public class PushListenerController {
     public final static class UnifiedPushListenerServiceProvider implements IPushListenerServiceProvider {
         public final static UnifiedPushListenerServiceProvider INSTANCE = new UnifiedPushListenerServiceProvider();
 
+        private boolean generateNewWebPushParameters = false;
+
         private UnifiedPushListenerServiceProvider(){};
 
         @Override
@@ -1634,41 +1633,71 @@ public class PushListenerController {
             );
         }
 
+        private static boolean isByteArrayEmpty(byte[] array) {
+            return array == null || array.length == 0;
+        }
+
+        public void generateNewWebPushParameters(){
+            generateNewWebPushParameters = true;
+        }
+
         @Override
         public boolean buildRegisterRequest(TLRPC.TL_account_registerDevice request, String endpoint, MessagesController msgController) {
-            // Generate ECDH Keypair on P-256 curve
-            KeyPairGenerator ecdhKeyPairGenerator;
-            try {
-                ecdhKeyPairGenerator = KeyPairGenerator.getInstance("EC");
-                ecdhKeyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
-            } catch (Throwable exception) {
-                FileLog.e(exception);
-                return false;
-            }
-            KeyPair ecdhKeyPair = ecdhKeyPairGenerator.generateKeyPair();
-            SharedConfig.pushAuthKey = ecdhKeyPair.getPrivate().getEncoded();
-            SharedConfig.pushAuthPubKey = ecdhKeyPair.getPublic().getEncoded();
-
-            // Generate auth secret
-            SharedConfig.pushAuthSecret = new byte[16];
-            Utilities.random.nextBytes(SharedConfig.pushAuthSecret);
-            SharedConfig.saveConfig();
-
             String jsonToken;
-            try {
-                jsonToken = new JSONStringer()
-                        .object()
-                        .key("endpoint").value(endpoint)
-                        .key("keys")
-                        .object()
-                        .key("p256dh").value(Base64.encodeToString(convertECPubkeyToUncompressedOctetStream((ECPublicKey) ecdhKeyPair.getPublic()), Base64.URL_SAFE | Base64.NO_WRAP))
-                        .key("auth").value(Base64.encodeToString(SharedConfig.pushAuthSecret, Base64.URL_SAFE | Base64.NO_WRAP))
-                        .endObject()
-                        .endObject()
-                        .toString();
-            } catch (Throwable exception) {
-                FileLog.e(exception);
-                return false;
+            if(generateNewWebPushParameters){
+                // Generate ECDH Keypair on P-256 curve
+                KeyPairGenerator ecdhKeyPairGenerator;
+                try {
+                    ecdhKeyPairGenerator = KeyPairGenerator.getInstance("EC");
+                    ecdhKeyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
+                } catch (Throwable exception) {
+                    FileLog.e(exception);
+                    return false;
+                }
+                KeyPair ecdhKeyPair = ecdhKeyPairGenerator.generateKeyPair();
+                SharedConfig.pushAuthKey = ecdhKeyPair.getPrivate().getEncoded();
+                SharedConfig.pushAuthPubKey = ecdhKeyPair.getPublic().getEncoded();
+
+                // Generate auth secret
+                SharedConfig.pushAuthSecret = new byte[16];
+                Utilities.random.nextBytes(SharedConfig.pushAuthSecret);
+                SharedConfig.saveConfig();
+                generateNewWebPushParameters = false;
+
+                try {
+                    jsonToken = new JSONStringer()
+                            .object()
+                            .key("endpoint").value(endpoint)
+                            .key("keys")
+                            .object()
+                            .key("p256dh").value(Base64.encodeToString(convertECPubkeyToUncompressedOctetStream((ECPublicKey) ecdhKeyPair.getPublic()), Base64.URL_SAFE | Base64.NO_WRAP))
+                            .key("auth").value(Base64.encodeToString(SharedConfig.pushAuthSecret, Base64.URL_SAFE | Base64.NO_WRAP))
+                            .endObject()
+                            .endObject()
+                            .toString();
+                } catch (Throwable exception) {
+                    FileLog.e(exception);
+                    return false;
+                }
+            } else {
+                try {
+                    final KeyFactory ECKeyFactory = KeyFactory.getInstance("EC");
+                    ECPublicKey pubKey = (ECPublicKey) ECKeyFactory.generatePublic(new X509EncodedKeySpec(SharedConfig.pushAuthPubKey));
+
+                    jsonToken = new JSONStringer()
+                            .object()
+                            .key("endpoint").value(endpoint)
+                            .key("keys")
+                            .object()
+                            .key("p256dh").value(Base64.encodeToString(convertECPubkeyToUncompressedOctetStream(pubKey), Base64.URL_SAFE | Base64.NO_WRAP))
+                            .key("auth").value(Base64.encodeToString(SharedConfig.pushAuthSecret, Base64.URL_SAFE | Base64.NO_WRAP))
+                            .endObject()
+                            .endObject()
+                            .toString();
+                } catch (Throwable exception) {
+                    FileLog.e(exception);
+                    return false;
+                }
             }
 
             request.token_type = getPushType();

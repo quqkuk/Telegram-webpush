@@ -14,10 +14,11 @@ public class UnifiedPushReceiver extends MessagingReceiver {
         final long getPushStringEndTime = SystemClock.elapsedRealtime();
         AndroidUtilities.runOnUIThread(() -> {
             ApplicationLoader.postInitApplication();
-            Utilities.globalQueue.postRunnable(() -> {
-                SharedConfig.pushStringGetTimeEnd = getPushStringEndTime;
-                PushListenerController.sendRegistrationToServer(PushListenerController.UnifiedPushListenerServiceProvider.INSTANCE, endpoint);
-            });
+            SharedConfig.pushStringGetTimeEnd = getPushStringEndTime;
+            if(!endpoint.equals(SharedConfig.pushString)){
+                INSTANCE.generateNewWebPushParameters();
+            }
+            Utilities.globalQueue.postRunnable(() -> PushListenerController.sendRegistrationToServer(INSTANCE, endpoint));
         });
     }
 
