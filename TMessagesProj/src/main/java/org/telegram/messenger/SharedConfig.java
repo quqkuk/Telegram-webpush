@@ -43,6 +43,7 @@ import java.io.UnsupportedEncodingException;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.net.URLEncoder;
+import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -440,8 +441,8 @@ public class SharedConfig {
                 editor.putInt("pushType", pushType);
                 editor.putBoolean("pushStatSent", pushStatSent);
                 editor.putString("pushAuthKey", pushAuthKey != null ? Base64.encodeToString(pushAuthKey, Base64.DEFAULT) : "");
-                editor.putString("pushAuthPubKey", pushAuthPubKey != null ? Base64.encodeToString(pushAuthKey, Base64.DEFAULT) : "");
-                editor.putString("pushAuthSecret", pushAuthSecret != null ? Base64.encodeToString(pushAuthSecret, Base64.DEFAULT) : "");
+                editor.putString("pushAuthPubKey", pushAuthPubKey != null ? Base64.encodeToString(pushAuthPubKey, Base64.DEFAULT | Base64.NO_WRAP) : "");
+                editor.putString("pushAuthSecret", pushAuthSecret != null ? Base64.encodeToString(pushAuthSecret, Base64.DEFAULT | Base64.NO_WRAP) : "");
                 editor.putInt("lastLocalId", lastLocalId);
                 editor.putString("passportConfigJson", passportConfigJson);
                 editor.putInt("passportConfigHash", passportConfigHash);
@@ -530,13 +531,13 @@ public class SharedConfig {
             if (!TextUtils.isEmpty(authKeyString)) {
                 pushAuthKey = Base64.decode(authKeyString, Base64.DEFAULT);
             }
-            String authPubKeyString = preferences.getString("pushAuthKey", null);
+            String authPubKeyString = preferences.getString("pushAuthPubKey", null);
             if (!TextUtils.isEmpty(authPubKeyString)) {
-                pushAuthPubKey = Base64.decode(authPubKeyString, Base64.DEFAULT);
+                pushAuthPubKey = Base64.decode(authPubKeyString, Base64.DEFAULT | Base64.NO_WRAP);
             }
             String authSecretString = preferences.getString("pushAuthSecret", null);
             if (!TextUtils.isEmpty(authSecretString)) {
-                pushAuthSecret = Base64.decode(authSecretString, Base64.DEFAULT);
+                pushAuthSecret = Base64.decode(authSecretString, Base64.DEFAULT | Base64.NO_WRAP);
             }
 
             if (passcodeHash.length() > 0 && lastPauseTime == 0) {
