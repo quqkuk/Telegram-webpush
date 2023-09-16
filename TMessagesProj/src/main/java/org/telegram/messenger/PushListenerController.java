@@ -100,14 +100,7 @@ public class PushListenerController {
                 if (userConfig.getClientUserId() != 0) {
                     final int currentAccount = a;
                     if (sendStat) {
-                        String tag;
-                        if(pushType == PUSH_TYPE_FIREBASE) {
-                            tag = "fcm";
-                        } else if(pushType == PUSH_TYPE_HUAWEI){
-                            tag = "hcm";
-                        } else {
-                            tag = "up";
-                        }
+                        String tag = pushProvider.getLogTag().toLowerCase();
                         TLRPC.TL_help_saveAppLog req = new TLRPC.TL_help_saveAppLog();
                         TLRPC.TL_inputAppEvent event = new TLRPC.TL_inputAppEvent();
                         event.time = SharedConfig.pushStringGetTimeStart;
@@ -135,15 +128,7 @@ public class PushListenerController {
     }
 
     public static void processRemoteMessage(IPushListenerServiceProvider pushProvider, byte[] data, long time) {
-        @PushType int pushType = pushProvider.getPushType();
-        String tag;
-        if(pushType == PUSH_TYPE_FIREBASE){
-            tag = "FCM";
-        } else if(pushType == PUSH_TYPE_HUAWEI){
-            tag = "HCM";
-        } else {
-            tag = "UP";
-        }
+        String tag = pushProvider.getLogTag();
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d(tag + " PRE START PROCESSING");
         }
@@ -1418,6 +1403,7 @@ public class PushListenerController {
     public interface IPushListenerServiceProvider {
         boolean hasServices();
         String getLogTitle();
+        String getLogTag();
         void onRequestPushToken();
         @PushType
         int getPushType();
@@ -1425,23 +1411,7 @@ public class PushListenerController {
         String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable;
     }
 
-    public final static class GooglePushListenerServiceProvider implements IPushListenerServiceProvider {
-        public final static GooglePushListenerServiceProvider INSTANCE = new GooglePushListenerServiceProvider();
-
-        private Boolean hasServices;
-
-        private GooglePushListenerServiceProvider() {}
-
-        @Override
-        public String getLogTitle() {
-            return "Google Play Services";
-        }
-
-        @Override
-        public int getPushType() {
-            return PUSH_TYPE_FIREBASE;
-        }
-
+    public abstract static class CloudMessagingListenerServiceProvider implements IPushListenerServiceProvider {
         @Override
         public boolean buildRegisterRequest(TLRPC.TL_account_registerDevice req, String regid, MessagesController msgController) {
             if (SharedConfig.pushAuthKey == null) {
@@ -1497,6 +1467,29 @@ public class PushListenerController {
             byte[] strBytes = new byte[len];
             buffer.readBytes(strBytes, true);
             return new String(strBytes);
+        }
+    }
+
+    public final static class GooglePushListenerServiceProvider extends CloudMessagingListenerServiceProvider {
+        public final static GooglePushListenerServiceProvider INSTANCE = new GooglePushListenerServiceProvider();
+
+        private Boolean hasServices;
+
+        private GooglePushListenerServiceProvider() {}
+
+        @Override
+        public String getLogTitle() {
+            return "Google Play Services";
+        }
+
+        @Override
+        public String getLogTag() {
+            return "FCM";
+        }
+
+        @Override
+        public int getPushType() {
+            return PUSH_TYPE_FIREBASE;
         }
 
         @Override
@@ -1564,6 +1557,11 @@ public class PushListenerController {
         @Override
         public String getLogTitle() {
             return "UnifiedPush";
+        }
+
+        @Override
+        public String getLogTag() {
+            return "UP";
         }
 
         @Override
@@ -1711,47 +1709,6 @@ public class PushListenerController {
 
         @Override
         public String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable {
-            /*String data = new String(dataBytes);
-            byte[] bytes = Base64.decode(data, Base64.URL_SAFE);
-            NativeByteBuffer buffer = new NativeByteBuffer(bytes.length);
-            buffer.writeBytes(bytes);
-            buffer.position(0);
-
-            if (SharedConfig.pushAuthKeyId == null) {
-                SharedConfig.pushAuthKeyId = new byte[8];
-                byte[] authKeyHash = Utilities.computeSHA1(SharedConfig.pushAuthKey);
-                System.arraycopy(authKeyHash, authKeyHash.length - 8, SharedConfig.pushAuthKeyId, 0, 8);
-            }
-            byte[] inAuthKeyId = new byte[8];
-            buffer.readBytes(inAuthKeyId, true);
-            if (!Arrays.equals(SharedConfig.pushAuthKeyId, inAuthKeyId)) {
-                onDecryptError();
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d(String.format(Locale.US, tag + " DECRYPT ERROR 2 k1=%s k2=%s, key=%s", Utilities.bytesToHex(SharedConfig.pushAuthKeyId), Utilities.bytesToHex(inAuthKeyId), Utilities.bytesToHex(SharedConfig.pushAuthKey)));
-                }
-                return null;
-            }
-
-            byte[] messageKey = new byte[16];
-            buffer.readBytes(messageKey, true);
-
-            MessageKeyData messageKeyData = MessageKeyData.generateMessageKeyData(SharedConfig.pushAuthKey, messageKey, true, 2);
-            Utilities.aesIgeEncryption(buffer.buffer, messageKeyData.aesKey, messageKeyData.aesIv, false, false, 24, bytes.length - 24);
-
-            byte[] messageKeyFull = Utilities.computeSHA256(SharedConfig.pushAuthKey, 88 + 8, 32, buffer.buffer, 24, buffer.buffer.limit());
-            if (!Utilities.arraysEquals(messageKey, 0, messageKeyFull, 8)) {
-                onDecryptError();
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d(String.format(tag + " DECRYPT ERROR 3, key = %s", Utilities.bytesToHex(SharedConfig.pushAuthKey)));
-                }
-                return null;
-            }
-
-            int len = buffer.readInt32(true);
-            byte[] strBytes = new byte[len];
-            buffer.readBytes(strBytes, true);
-            return new String(strBytes);*/
-            Log.d("UnifiedPush", "Received notification " + data.toString());
             final ByteBuffer encryptedPayload = ByteBuffer.wrap(data);
             final byte[] salt = new byte[16];
             encryptedPayload.get(salt);

@@ -7,7 +7,9 @@ import android.text.TextUtils;
 import com.huawei.hms.aaid.HmsInstanceId;
 import com.huawei.hms.common.ApiException;
 
-public class HuaweiPushListenerProvider implements PushListenerController.IPushListenerServiceProvider {
+import org.telegram.tgnet.TLRPC;
+
+public class HuaweiPushListenerProvider extends PushListenerController.CloudMessagingListenerServiceProvider {
     public final static HuaweiPushListenerProvider INSTANCE = new HuaweiPushListenerProvider();
 
     private Boolean hasServices;
@@ -36,6 +38,11 @@ public class HuaweiPushListenerProvider implements PushListenerController.IPushL
     }
 
     @Override
+    public String getLogTag() {
+        return "HCM";
+    }
+
+    @Override
     public void onRequestPushToken() {
         Utilities.globalQueue.postRunnable(() -> {
             try {
@@ -43,7 +50,7 @@ public class HuaweiPushListenerProvider implements PushListenerController.IPushL
                 SharedConfig.pushStringGetTimeEnd = SystemClock.elapsedRealtime();
 
                 if (!TextUtils.isEmpty(token)) {
-                    PushListenerController.sendRegistrationToServer(getPushType(), token);
+                    PushListenerController.sendRegistrationToServer(this, token);
                 }
             } catch (ApiException e) {
                 FileLog.e(e);
@@ -54,7 +61,7 @@ public class HuaweiPushListenerProvider implements PushListenerController.IPushL
                     FileLog.d("Failed to get regid");
                 }
                 SharedConfig.pushStringStatus = "__HUAWEI_FAILED__";
-                PushListenerController.sendRegistrationToServer(getPushType(), null);
+                PushListenerController.sendRegistrationToServer(this, null);
             }
         });
     }

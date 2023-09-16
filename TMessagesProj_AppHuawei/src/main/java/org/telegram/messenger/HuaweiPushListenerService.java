@@ -17,7 +17,7 @@ public class HuaweiPushListenerService extends HmsMessageService {
                 FileLog.d("HCM received data: " + data + " from: " + from);
             }
 
-            PushListenerController.processRemoteMessage(PushListenerController.PUSH_TYPE_HUAWEI, data.getBytes(), time);
+            PushListenerController.processRemoteMessage(HuaweiPushListenerProvider.INSTANCE, data.getBytes(), time);
         });
     }
 
@@ -28,7 +28,7 @@ public class HuaweiPushListenerService extends HmsMessageService {
                 FileLog.d("Refreshed HCM token: " + token);
             }
             ApplicationLoader.postInitApplication();
-            PushListenerController.sendRegistrationToServer(PushListenerController.PUSH_TYPE_HUAWEI, token);
+            PushListenerController.sendRegistrationToServer(HuaweiPushListenerProvider.INSTANCE, token);
         });
     }
 }
