@@ -146,7 +146,6 @@ public class PushListenerController {
                 String loc_key = null;
                 String jsonString = null;
                 try {
-                    Log.d("PushListenerController", "Sending " + pushProvider.getClass().getName() + " message " + data.toString());
                     jsonString = pushProvider.getPayloadFromRemoteMessage(tag, data);
                     JSONObject json = new JSONObject(jsonString);
 
@@ -1269,14 +1268,16 @@ public class PushListenerController {
                 }
             });
         });
-        try {
-            countDownLatch.await();
-        } catch (Throwable ignore) {
+        Utilities.globalQueue.postRunnable(()->{
+            try {
+                countDownLatch.await();
+            } catch (Throwable ignore) {
 
-        }
-        if (BuildVars.DEBUG_VERSION) {
-            FileLog.d("finished " + tag + " service, time = " + (SystemClock.elapsedRealtime() - receiveTime));
-        }
+            }
+            if (BuildVars.DEBUG_VERSION) {
+                FileLog.d("finished " + tag + " service, time = " + (SystemClock.elapsedRealtime() - receiveTime));
+            }
+        });
     }
 
     private static String getReactedText(String loc_key, Object[] args) {
