@@ -146,7 +146,7 @@ public class PushListenerController {
                 String loc_key = null;
                 String jsonString = null;
                 try {
-                    jsonString = pushProvider.getPayloadFromRemoteMessage(tag, data);
+                    jsonString = pushProvider.getPayloadFromRemoteMessage(data);
                     JSONObject json = new JSONObject(jsonString);
 
                     if (json.has("loc_key")) {
@@ -1406,7 +1406,7 @@ public class PushListenerController {
         @PushType
         int getPushType();
         boolean buildRegisterRequest(TLRPC.TL_account_registerDevice request, String id, MessagesController msgController);
-        String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable;
+        String getPayloadFromRemoteMessage(byte[] data) throws Throwable;
     }
 
     public abstract static class CloudMessagingListenerServiceProvider implements IPushListenerServiceProvider {
@@ -1424,7 +1424,7 @@ public class PushListenerController {
         }
 
         @Override
-        public String getPayloadFromRemoteMessage(String tag, byte[] dataBytes) throws Throwable {
+        public String getPayloadFromRemoteMessage(byte[] dataBytes) throws Throwable {
             String data = new String(dataBytes);
             byte[] bytes = Base64.decode(data, Base64.URL_SAFE);
             NativeByteBuffer buffer = new NativeByteBuffer(bytes.length);
@@ -1441,7 +1441,7 @@ public class PushListenerController {
             if (!Arrays.equals(SharedConfig.pushAuthKeyId, inAuthKeyId)) {
                 onDecryptError();
                 if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d(String.format(Locale.US, tag + " DECRYPT ERROR 2 k1=%s k2=%s, key=%s", Utilities.bytesToHex(SharedConfig.pushAuthKeyId), Utilities.bytesToHex(inAuthKeyId), Utilities.bytesToHex(SharedConfig.pushAuthKey)));
+                    FileLog.d(String.format(Locale.US, getLogTag() + " DECRYPT ERROR 2 k1=%s k2=%s, key=%s", Utilities.bytesToHex(SharedConfig.pushAuthKeyId), Utilities.bytesToHex(inAuthKeyId), Utilities.bytesToHex(SharedConfig.pushAuthKey)));
                 }
                 return null;
             }
@@ -1456,7 +1456,7 @@ public class PushListenerController {
             if (!Utilities.arraysEquals(messageKey, 0, messageKeyFull, 8)) {
                 onDecryptError();
                 if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d(String.format(tag + " DECRYPT ERROR 3, key = %s", Utilities.bytesToHex(SharedConfig.pushAuthKey)));
+                    FileLog.d(String.format(getLogTag() + " DECRYPT ERROR 3, key = %s", Utilities.bytesToHex(SharedConfig.pushAuthKey)));
                 }
                 return null;
             }
@@ -1738,7 +1738,7 @@ public class PushListenerController {
         }
 
         @Override
-        public String getPayloadFromRemoteMessage(String tag, byte[] data) throws Throwable {
+        public String getPayloadFromRemoteMessage(byte[] data) throws Throwable {
             final ByteBuffer encryptedPayload = ByteBuffer.wrap(data);
             final byte[] salt = new byte[16];
             encryptedPayload.get(salt);
